@@ -9,27 +9,10 @@ on:
         type: boolean
         default: false
       tags-to-keep:
-        description: "Tags to keep from being pruned"
+        description: "Comma-separated list of tags to keep (exact or regex)"
         required: false
         type: string
-        default: |
-          main
-          master
-          latest
-          nightly
-          develop
-      tags-to-keep-regex:
-        description: "Tags to keep from being pruned (regex)"
-        required: false
-        type: string
-        default: | 
-          ^release(\d+)
-          ^v(\d+).(\d+).(\d+)
-      tags-to-prune-regex:
-        description: "Tags to prune (regex)"
-        required: false
-        type: string
-        default: .*
+        default: "main,master,latest,nightly,develop,release*,v*.*.*"
       dry-run:
         description: "Dry run"
         required: false
@@ -39,14 +22,14 @@ on:
         description: "Keep tags younger than X days"
         required: false
         type: number
-        default: 14
+        default: 20
       keep-last:
         description: "Keep the last X tags"
         required: false
         type: string
-        default: 10
+        default: "15"
       package-name:
-        description: "Name of the package"
+        description: "Name of the package (defaults to repo name)"
         required: false
         type: string
       runners:
@@ -56,34 +39,23 @@ on:
         default: "['ubuntu-latest']"
     secrets:
       prune-token:
-        description: "Secret needed for GHCR access"
-        required: true
-         
+        description: "Secret needed for GHCR access (Optional if you grant packages:write)"
+        required: false
 
 jobs:
   prune-container-images:
-    runs-on: ${{ fromJson(inputs.runners)}}
+    runs-on: ${{ fromJson(inputs.runners) }}
+    permissions:
+      packages: write
     steps:
-      - name: Prune untagged container images
-        uses: vlaurin/action-ghcr-prune@v0.6.0
-        if: ${{ inputs.prune-untagged }}
+      - name: Prune container images (Tagged & Untagged)
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
         with:
-          token: ${{ secrets.prune-token }}
-          organization: ${{ github.repository_owner }}
-          container: ${{ inputs.package-name }}
+          token: ${{ secrets.prune-token || github.token }}
+          package: ${{ inputs.package-name || github.event.repository.name }}
           dry-run: ${{ inputs.dry-run }}
-          prune-untagged: ${{ inputs.prune-untagged }}
-
-      - name: Prune tagged container images
-        uses: vlaurin/action-ghcr-prune@v0.6.0
-        with:
-          token: ${{ secrets.prune-token }}
-          organization: ${{ github.repository_owner }}
-          container: ${{ inputs.package-name }}
-          dry-run: ${{ inputs.dry-run }}
-          keep-younger-than: ${{ inputs.keep-younger-than }}
-          keep-last: ${{ inputs.keep-last}}
-          keep-tags: ${{ inputs.tags-to-keep }}
-          keep-tags-regexes: ${{ inputs.tags-to-keep-regex}}
-          prune-tags-regexes: ${{ inputs.tags-to-prune-regex}}
-
+          delete-untagged: ${{ inputs.prune-untagged }}
+          keep-n-tagged: ${{ inputs.keep-last }}
+          older-than: ${{ inputs.keep-younger-than }} days
+          exclude-tags: "${{ inputs.tags-to-keep }}"
+          log-level: debug
